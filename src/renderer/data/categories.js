@@ -68,13 +68,19 @@ export class CategoryStore {
     return this.items.find((c) => c.id === id) || { id, label: id, icon: '❔', color: '#b0bec5' };
   }
 
+  /** A palette color no active category uses yet (cycles when all are taken). */
+  nextColor() {
+    const used = new Set(this.active().map((c) => c.color));
+    return COLOR_CHOICES.find((c) => !used.has(c)) || COLOR_CHOICES[this.items.length % COLOR_CHOICES.length];
+  }
+
   add({ label, icon, color }) {
     label = String(label || '').trim();
     if (!label) throw new Error('Name is required');
     let id = slug(label);
     let n = 2;
     while (this.items.some((c) => c.id === id)) id = `${slug(label)}_${n++}`;
-    const cat = { id, label, icon: icon || '📦', color: color || '#90a4ae' };
+    const cat = { id, label, icon: icon || '📦', color: color || this.nextColor() };
     this.items.push(cat);
     this.#save();
     return cat;
@@ -100,6 +106,12 @@ export class CategoryStore {
     if (cat) { cat.archived = true; this.#save(); }
   }
 
+  /** Undo a delete. */
+  unarchive(id) {
+    const cat = this.items.find((c) => c.id === id);
+    if (cat) { delete cat.archived; this.#save(); }
+  }
+
   /** Move within the active list (changes position on the board). */
   move(id, dir) {
     const active = this.active();
@@ -109,6 +121,16 @@ export class CategoryStore {
     const a = this.items.indexOf(active[i]);
     const b = this.items.indexOf(active[j]);
     [this.items[a], this.items[b]] = [this.items[b], this.items[a]];
+    this.#save();
+  }
+
+  /** Set the display order of active categories from a list of ids (drag & drop). */
+  reorder(ids) {
+    const active = this.active();
+    const byId = new Map(active.map((c) => [c.id, c]));
+    const ordered = ids.map((id) => byId.get(id)).filter(Boolean);
+    for (const c of active) if (!ordered.includes(c)) ordered.push(c);
+    this.items = [...ordered, ...this.items.filter((c) => c.archived)];
     this.#save();
   }
 

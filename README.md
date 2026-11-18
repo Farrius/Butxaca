@@ -12,7 +12,7 @@ npm test         # data-layer unit tests
 npm run build:single  # one self-contained HTML file in dist/ (easy to host / open on a phone)
 ```
 
-## What it does (v0.3)
+## What it does (v0.4)
 
 - **+ Expense** → category grid → amount keypad, with currency, date and optional note.
 - **Categories sit on a circle** around the spending donut; **tap an icon** to add straight into it (Monefy shortcut). The circle scales to the screen and the number of categories.
@@ -21,7 +21,7 @@ npm run build:single  # one self-contained HTML file in dist/ (easy to host / op
 - **☰ menu** (everything inline, no sub-screens)
   - **Period**: Day / Week / Month / Year / All
   - **Main currency**: what totals and the chart use, and the default for new expenses. Each currency is totalled separately (no FX conversion yet).
-  - **Categories**: listed right in the menu. Tap one to edit name/icon/color in place, ＋ to add, ▲▼ to move it around the circle, delete with two taps (past expenses keep it in history).
+  - **Categories**: first 5 shown, *Show all* for the rest. Drag ⠿ to change a category's place on the circle (touch or mouse). ✎ edits name + emoji (pick one or type any emoji), 🗑 deletes with Undo (past expenses keep it in history). Colors are assigned automatically.
   - **Export to spreadsheet (CSV)**: opens directly in Google Sheets / Excel.
 - Keyboard on desktop: digits, `,`/`.`, Backspace, Enter to save, Esc to close.
 - Data is stored locally (Electron's localStorage).

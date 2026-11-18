@@ -1,4 +1,4 @@
-import { CategoryStore, CURRENCIES, ICON_CHOICES, COLOR_CHOICES, formatMoney } from './data/categories.js';
+import { CategoryStore, CURRENCIES, ICON_CHOICES, formatMoney } from './data/categories.js';
 import { LocalStore, toCSV } from './data/store.js';
 import { rangeFor, shift, inRange, labelFor, toISODate, parseISODate } from './data/period.js';
 
@@ -14,7 +14,8 @@ const state = {
   expenses: [],
   entry: { category: null, value: '0', currency: null },
   expanded: new Set(),
-  editing: null, // category being edited ({ id?, label, icon, color })
+  editing: null, // category being edited in the menu
+  showAllCats: false,
 };
 
 // Locale decimal separator ("," in Catalan/Spanish, "." in English).
@@ -168,6 +169,7 @@ function openSheet(id) {
 function openDrawer() {
   closeAll();
   state.editing = null;
+  state.showAllCats = false;
   $('toast').classList.remove('show');
   renderDrawer();
   $('scrim').hidden = false;
@@ -350,41 +352,79 @@ function renderList() {
   }
 }
 
-// ---------- Categories (edited inline in the menu) ----------
-// state.editing: null, or { id (null = new), label, icon, color }
+// ---------- Categories (inline in the menu) ----------
+// state.editing: null, or { id (null = new), label, icon }
+const COLLAPSED_COUNT = 5;
 
 function renderCategories() {
   const list = $('categoriesList');
   list.innerHTML = '';
   const cats = categories.active();
+  const visible = state.showAllCats ? cats : cats.slice(0, COLLAPSED_COUNT);
   $('catCount').textContent = cats.length;
-  cats.forEach((cat, i) => {
+
+  for (const cat of visible) {
     const open = state.editing?.id === cat.id;
     const row = document.createElement('div');
     row.className = 'cat-row' + (open ? ' open' : '');
+    row.dataset.id = cat.id;
     row.style.setProperty('--c', cat.color);
     row.innerHTML = `
-      <button class="name"><span class="cat-icon">${escapeHtml(cat.icon)}</span><span>${escapeHtml(cat.label)}</span></button>
-      <button class="move" data-dir="-1" aria-label="Move ${escapeHtml(cat.label)} up" ${i === 0 ? 'disabled' : ''}>▲</button>
-      <button class="move" data-dir="1" aria-label="Move ${escapeHtml(cat.label)} down" ${i === cats.length - 1 ? 'disabled' : ''}>▼</button>`;
-    row.querySelector('.name').addEventListener('click', () => {
-      state.editing = open ? null : { id: cat.id, label: cat.label, icon: cat.icon, color: cat.color };
-      renderCategories();
-    });
-    row.querySelectorAll('.move').forEach((b) => b.addEventListener('click', () => {
-      categories.move(cat.id, Number(b.dataset.dir));
-      renderCategories();
-      render();
-    }));
+      <span class="handle" title="Drag to reorder" aria-label="Drag ${escapeHtml(cat.label)} to reorder">⠿</span>
+      <span class="name"><span class="cat-icon">${escapeHtml(cat.icon)}</span><span>${escapeHtml(cat.label)}</span></span>
+      <button class="row-act edit" aria-label="Edit ${escapeHtml(cat.label)}">✎</button>
+      <button class="row-act del" aria-label="Delete ${escapeHtml(cat.label)}">🗑</button>`;
+    row.querySelector('.edit').addEventListener('click', () => toggleEdit(cat));
+    row.querySelector('.name').addEventListener('click', () => toggleEdit(cat));
+    row.querySelector('.del').addEventListener('click', () => deleteCategory(cat));
+    row.querySelector('.handle').addEventListener('pointerdown', (ev) => startDrag(ev, cat.id));
     list.appendChild(row);
     if (open) list.appendChild(categoryEditor());
-  });
+  }
+
+  const more = $('showAllCats');
+  more.hidden = cats.length <= COLLAPSED_COUNT;
+  more.textContent = state.showAllCats ? 'Show less ▴' : `Show all ${cats.length} ▾`;
 
   const slot = $('newCategorySlot');
   slot.innerHTML = '';
   const adding = state.editing && state.editing.id === null;
   if (adding) slot.appendChild(categoryEditor());
   $('addCategoryBtn').hidden = adding;
+}
+
+function toggleEdit(cat) {
+  state.editing = state.editing?.id === cat.id ? null : { id: cat.id, label: cat.label, icon: cat.icon };
+  renderCategories();
+}
+
+function deleteCategory(cat) {
+  try {
+    categories.remove(cat.id);
+  } catch (err) {
+    toast(err.message);
+    return;
+  }
+  if (state.editing?.id === cat.id) state.editing = null;
+  renderCategories();
+  render();
+  const used = state.expenses.filter((x) => x.category === cat.id).length;
+  toast(`Deleted ${cat.label}` + (used ? ` — its ${used} past expense${used > 1 ? 's stay' : ' stays'} in history` : ''), () => {
+    categories.unarchive(cat.id);
+    renderCategories();
+    render();
+  });
+}
+
+/** Last character the user typed/pasted (handles multi-codepoint emoji). */
+function lastGrapheme(str) {
+  const s = String(str).trim();
+  if (!s) return '';
+  if (typeof Intl !== 'undefined' && Intl.Segmenter) {
+    const parts = [...new Intl.Segmenter().segment(s)];
+    return parts[parts.length - 1].segment;
+  }
+  return [...s].pop();
 }
 
 function categoryEditor() {
@@ -395,43 +435,43 @@ function categoryEditor() {
   const icons = ICON_CHOICES.includes(e.icon) ? ICON_CHOICES : [e.icon, ...ICON_CHOICES];
   el.innerHTML = `
     <div class="ed-top">
-      <span class="cat-icon" style="--c:${e.color}">${escapeHtml(e.icon)}</span>
-      <input type="text" class="select" maxlength="24" placeholder="Name (e.g. Rent)" value="${escapeHtml(e.label)}" />
+      <input type="text" class="select emoji-in" aria-label="Emoji" value="${escapeHtml(e.icon)}" />
+      <input type="text" class="select name-in" maxlength="24" placeholder="Name (e.g. Rent)" value="${escapeHtml(e.label)}" />
     </div>
+    <p class="ed-hint">Pick an emoji below or type any one from your keyboard.</p>
     <div class="icon-grid">${icons.map((ic) => `<button class="${ic === e.icon ? 'sel' : ''}">${ic}</button>`).join('')}</div>
-    <div class="color-grid">${COLOR_CHOICES.map((c) =>
-      `<button class="${c === e.color ? 'sel' : ''}" style="background:${c}" data-color="${c}" aria-label="Color ${c}"></button>`).join('')}</div>
     <p class="error"></p>
     <div class="ed-actions">
       <button class="save">${isNew ? 'Add' : 'Save'}</button>
       <button class="cancel">Cancel</button>
-      ${isNew ? '' : '<button class="delete">Delete</button>'}
     </div>`;
 
-  const preview = el.querySelector('.ed-top .cat-icon');
-  const input = el.querySelector('input');
+  const emojiIn = el.querySelector('.emoji-in');
+  const nameIn = el.querySelector('.name-in');
   const error = el.querySelector('.error');
-  input.addEventListener('input', () => { e.label = input.value; error.textContent = ''; });
-  input.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') save(); });
+  const markSelected = () => el.querySelectorAll('.icon-grid button').forEach((x) => x.classList.toggle('sel', x.textContent === e.icon));
+
+  nameIn.addEventListener('input', () => { e.label = nameIn.value; error.textContent = ''; });
+  nameIn.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') save(); });
+  emojiIn.addEventListener('focus', () => emojiIn.select());
+  emojiIn.addEventListener('input', () => {
+    const g = lastGrapheme(emojiIn.value);
+    if (g) { e.icon = g; emojiIn.value = g; markSelected(); }
+  });
   el.querySelector('.icon-grid').addEventListener('click', (ev) => {
     const b = ev.target.closest('button');
     if (!b) return;
     e.icon = b.textContent;
-    preview.textContent = e.icon;
-    el.querySelectorAll('.icon-grid button').forEach((x) => x.classList.toggle('sel', x === b));
-  });
-  el.querySelector('.color-grid').addEventListener('click', (ev) => {
-    const b = ev.target.closest('button');
-    if (!b) return;
-    e.color = b.dataset.color;
-    preview.style.setProperty('--c', e.color);
-    el.querySelectorAll('.color-grid button').forEach((x) => x.classList.toggle('sel', x === b));
+    emojiIn.value = e.icon;
+    markSelected();
   });
 
   function save() {
     try {
-      if (isNew) categories.add(e);
-      else categories.update(e.id, e);
+      if (isNew) {
+        categories.add(e);
+        state.showAllCats = categories.active().length > COLLAPSED_COUNT; // so the new one is visible
+      } else categories.update(e.id, e);
     } catch (err) {
       error.textContent = err.message;
       return;
@@ -443,29 +483,76 @@ function categoryEditor() {
   el.querySelector('.save').addEventListener('click', save);
   el.querySelector('.cancel').addEventListener('click', () => { state.editing = null; renderCategories(); });
 
-  const del = el.querySelector('.delete');
-  if (del) del.addEventListener('click', () => {
-    // Two taps to delete (no native confirm dialogs on mobile web views).
-    if (!del.classList.contains('armed')) {
-      const used = state.expenses.filter((x) => x.category === e.id).length;
-      del.classList.add('armed');
-      del.textContent = used ? `Sure? ${used} past expense${used > 1 ? 's stay' : ' stays'} in history` : 'Tap again to delete';
-      return;
-    }
-    try {
-      categories.remove(e.id);
-    } catch (err) {
-      error.textContent = err.message;
-      return;
-    }
-    state.editing = null;
+  if (isNew) setTimeout(() => nameIn.focus(), 30);
+  return el;
+}
+
+/**
+ * Drag & drop reordering with pointer events (works with touch, mouse and pen;
+ * HTML5 drag-and-drop doesn't work on phones). The row follows the finger and
+ * swaps with its neighbour once it passes the neighbour's middle.
+ */
+function startDrag(ev, id) {
+  ev.preventDefault();
+  if (state.editing) { state.editing = null; renderCategories(); }
+  const list = $('categoriesList');
+  const drawer = $('drawer');
+  const row = list.querySelector(`.cat-row[data-id="${CSS.escape(id)}"]`);
+  if (!row) return;
+
+  const startY = ev.clientY;
+  const startScroll = drawer.scrollTop;
+  const baseTop = row.offsetTop;
+  row.classList.add('dragging');
+  document.body.classList.add('is-dragging');
+  let autoScroll = 0;
+  let lastY = startY;
+
+  const update = () => {
+    const dy = lastY - startY + (drawer.scrollTop - startScroll);
+    const visualTop = baseTop + dy;
+    const mid = visualTop + row.offsetHeight / 2;
+    const prev = row.previousElementSibling;
+    const next = row.nextElementSibling;
+    if (next && mid > next.offsetTop + next.offsetHeight / 2) list.insertBefore(next, row);
+    else if (prev && mid < prev.offsetTop + prev.offsetHeight / 2) list.insertBefore(row, prev);
+    row.style.transform = `translateY(${visualTop - row.offsetTop}px)`;
+  };
+
+  const tick = () => {
+    if (!autoScroll) return;
+    drawer.scrollTop += autoScroll;
+    update();
+    requestAnimationFrame(tick);
+  };
+
+  const onMove = (e) => {
+    lastY = e.clientY;
+    const r = drawer.getBoundingClientRect();
+    const was = autoScroll;
+    autoScroll = lastY < r.top + 40 ? -6 : lastY > r.bottom - 40 ? 6 : 0;
+    if (autoScroll && !was) requestAnimationFrame(tick);
+    update();
+  };
+
+  const onUp = () => {
+    autoScroll = 0;
+    window.removeEventListener('pointermove', onMove);
+    window.removeEventListener('pointerup', onUp);
+    window.removeEventListener('pointercancel', onUp);
+    row.classList.remove('dragging');
+    row.style.transform = '';
+    document.body.classList.remove('is-dragging');
+    const visibleIds = [...list.querySelectorAll('.cat-row')].map((r) => r.dataset.id);
+    const rest = categories.active().map((c) => c.id).filter((x) => !visibleIds.includes(x));
+    categories.reorder([...visibleIds, ...rest]);
     renderCategories();
     render();
-    toast('Category deleted');
-  });
+  };
 
-  if (isNew) setTimeout(() => input.focus(), 30);
-  return el;
+  window.addEventListener('pointermove', onMove);
+  window.addEventListener('pointerup', onUp);
+  window.addEventListener('pointercancel', onUp);
 }
 
 // ---------- Misc ----------
@@ -535,7 +622,12 @@ function init() {
 
   // Categories
   $('addCategoryBtn').addEventListener('click', () => {
-    state.editing = { id: null, label: '', icon: ICON_CHOICES[0], color: COLOR_CHOICES[Math.floor(Math.random() * COLOR_CHOICES.length)] };
+    state.editing = { id: null, label: '', icon: '📦' };
+    renderCategories();
+  });
+  $('showAllCats').addEventListener('click', () => {
+    state.showAllCats = !state.showAllCats;
+    state.editing = null;
     renderCategories();
   });
   $('resetCategories').addEventListener('click', (e) => {

@@ -77,3 +77,16 @@ test('categories: cannot delete the last one', () => {
   for (const c of cats.active().slice(1)) cats.remove(c.id);
   assert.throws(() => cats.remove(cats.active()[0].id));
 });
+
+test('categories: reorder by ids and auto colors', () => {
+  const cats = new CategoryStore(memoryStorage());
+  const ids = cats.active().map((c) => c.id);
+  cats.remove(ids[1]);
+  cats.reorder([ids[3], ids[0]]); // partial list: the rest keep their order after
+  const now = cats.active().map((c) => c.id);
+  assert.deepEqual(now.slice(0, 3), [ids[3], ids[0], ids[2]]);
+  assert.equal(now.length, ids.length - 1);
+  assert.ok(cats.get(ids[1]).archived); // archived kept
+  const used = new Set(cats.active().map((c) => c.color));
+  assert.ok(!used.has(cats.add({ label: 'New' }).color) || used.size >= 16);
+});
