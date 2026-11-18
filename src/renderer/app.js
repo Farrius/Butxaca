@@ -42,19 +42,29 @@ function totalsByCategory(rows) {
 }
 
 /**
- * Board layout: categories go clockwise around the donut on a 4-column grid
- * (top row, right column, bottom row, left column). The grid grows taller
- * when there are more than 12 categories.
+ * Board geometry: icons sit evenly on a circle (clockwise from the top)
+ * around the donut. Everything scales with the available space and the
+ * number of categories, so it stays round on any screen.
  */
-function ringLayout(n) {
-  const side = Math.max(2, Math.ceil(Math.max(0, n - 8) / 2)); // rows beside the donut
-  const rows = side + 2;
-  const slots = [];
-  for (let c = 1; c <= 4; c++) slots.push([1, c]);
-  for (let r = 2; r <= rows - 1; r++) slots.push([r, 4]);
-  for (let c = 4; c >= 1; c--) slots.push([rows, c]);
-  for (let r = rows - 1; r >= 2; r--) slots.push([r, 1]);
-  return { rows, side, slots: slots.slice(0, n) };
+function circleLayout(width, height, n) {
+  const S = Math.min(width, height);
+  const AMOUNT_ROOM = 16; // label under the bottom icons
+  let icon = 50;
+  let R = S / 2 - icon / 2 - AMOUNT_ROOM;
+  // Shrink icons when there are many categories so neighbours never touch.
+  for (let i = 0; i < 2; i++) {
+    const spacing = (2 * Math.PI * R) / Math.max(n, 1);
+    icon = Math.max(28, Math.min(54, spacing * 0.7, S * 0.14));
+    R = S / 2 - icon / 2 - AMOUNT_ROOM;
+  }
+  const donut = Math.max(120, 2 * (R - icon / 2 - 18)); // leave room for amounts under top icons
+  const cx = width / 2;
+  const cy = height / 2;
+  const points = Array.from({ length: n }, (_, i) => {
+    const a = -Math.PI / 2 + (2 * Math.PI * i) / n;
+    return [cx + R * Math.cos(a), cy + R * Math.sin(a)];
+  });
+  return { cx, cy, icon, donut, points };
 }
 
 // ---------- Main screen ----------
@@ -65,37 +75,49 @@ function renderHeader() {
   $('nextBtn').disabled = isAll;
 }
 
-function catButton(cat, amount, showAmount = true) {
+function catButton(cat, { amount = 0, mode = 'board' } = {}) {
   const btn = document.createElement('button');
-  btn.className = 'cat-cell' + (amount ? '' : ' empty');
+  btn.className = 'cat-cell' + (mode === 'board' && !amount ? ' empty' : '');
   btn.style.setProperty('--c', cat.color);
   btn.dataset.category = cat.id;
-  btn.innerHTML = `
-    <span class="cat-icon">${escapeHtml(cat.icon)}</span>
-    <span class="cat-name">${escapeHtml(cat.label)}</span>
-    ${showAmount ? `<span class="cat-amount">${amount ? money(amount) : ''}</span>` : ''}`;
+  btn.title = cat.label;
+  btn.setAttribute('aria-label', amount ? `${cat.label}: ${money(amount)}` : cat.label);
+  btn.innerHTML = `<span class="cat-icon">${escapeHtml(cat.icon)}</span>` + (mode === 'board'
+    ? `<span class="cat-amount">${amount ? money(amount) : ''}</span>`
+    : `<span class="cat-name">${escapeHtml(cat.label)}</span>`);
   return btn;
 }
 
 function renderBoard(totals) {
   const board = $('board');
-  board.querySelectorAll('.cat-cell, .empty-board').forEach((n) => n.remove());
+  board.querySelectorAll('.cat-cell').forEach((n) => n.remove());
   const cats = categories.active();
-  // Also show archived categories that still have spending in this period.
+  // Also show deleted categories that still have spending in this period.
   for (const id of totals.keys()) {
     if (!cats.some((c) => c.id === id)) cats.push(categories.get(id));
   }
-  const { rows, side, slots } = ringLayout(cats.length);
-  board.style.gridTemplateRows = `repeat(${rows}, 1fr)`;
-  $('donut').style.gridRow = `2 / span ${side}`;
-  cats.forEach((cat, i) => {
-    const btn = catButton(cat, totals.get(cat.id) || 0);
-    const [row, col] = slots[i];
-    btn.style.gridRow = row;
-    btn.style.gridColumn = col;
+  for (const cat of cats) {
+    const btn = catButton(cat, { amount: totals.get(cat.id) || 0 });
     btn.addEventListener('click', () => (cat.archived ? openList() : openAmount(cat.id)));
     board.appendChild(btn);
+  }
+  layoutBoard();
+}
+
+/** Positions the icons and sizes the donut; re-run whenever the board resizes. */
+function layoutBoard() {
+  const board = $('board');
+  const cells = [...board.querySelectorAll('.cat-cell')];
+  const { cx, cy, icon, donut, points } = circleLayout(board.clientWidth, board.clientHeight, cells.length);
+  cells.forEach((el, i) => {
+    el.style.left = `${points[i][0]}px`;
+    el.style.top = `${points[i][1]}px`;
+    el.style.setProperty('--sz', `${icon}px`);
   });
+  const d = $('donut');
+  d.style.left = `${cx}px`;
+  d.style.top = `${cy}px`;
+  d.style.setProperty('--d', `${donut}px`);
 }
 
 function renderDonut(totals) {
@@ -145,6 +167,7 @@ function openSheet(id) {
 // ---------- Hamburger menu ----------
 function openDrawer() {
   closeAll();
+  state.editing = null;
   $('toast').classList.remove('show');
   renderDrawer();
   $('scrim').hidden = false;
@@ -155,7 +178,7 @@ function renderDrawer() {
   document.querySelectorAll('#periodOptions button').forEach((b) =>
     b.classList.toggle('active', b.dataset.period === state.period));
   $('mainCurrency').value = state.currency;
-  $('catCount').textContent = categories.active().length;
+  renderCategories();
   $('drawerSummary').textContent = `${state.period === 'all' ? 'All time' : state.period} · ${state.currency}`;
 }
 
@@ -179,7 +202,7 @@ function openCategoryPicker() {
   const grid = $('categoryGrid');
   grid.innerHTML = '';
   for (const cat of categories.active()) {
-    const btn = catButton(cat, 1, false);
+    const btn = catButton(cat, { mode: 'picker' });
     btn.addEventListener('click', () => openAmount(cat.id));
     grid.appendChild(btn);
   }
@@ -327,96 +350,122 @@ function renderList() {
   }
 }
 
-// ---------- Categories manager ----------
-function openCategories() {
-  renderCategories();
-  openSheet('categoriesSheet');
-}
+// ---------- Categories (edited inline in the menu) ----------
+// state.editing: null, or { id (null = new), label, icon, color }
 
 function renderCategories() {
   const list = $('categoriesList');
   list.innerHTML = '';
   const cats = categories.active();
+  $('catCount').textContent = cats.length;
   cats.forEach((cat, i) => {
+    const open = state.editing?.id === cat.id;
     const row = document.createElement('div');
-    row.className = 'cat-row';
+    row.className = 'cat-row' + (open ? ' open' : '');
     row.style.setProperty('--c', cat.color);
     row.innerHTML = `
-      <span class="cat-icon">${escapeHtml(cat.icon)}</span>
-      <button class="name">${escapeHtml(cat.label)}</button>
-      <button class="move" data-dir="-1" aria-label="Move up" ${i === 0 ? 'disabled' : ''}>▲</button>
-      <button class="move" data-dir="1" aria-label="Move down" ${i === cats.length - 1 ? 'disabled' : ''}>▼</button>`;
-    row.querySelector('.cat-icon').addEventListener('click', () => openEditor(cat));
-    row.querySelector('.name').addEventListener('click', () => openEditor(cat));
+      <button class="name"><span class="cat-icon">${escapeHtml(cat.icon)}</span><span>${escapeHtml(cat.label)}</span></button>
+      <button class="move" data-dir="-1" aria-label="Move ${escapeHtml(cat.label)} up" ${i === 0 ? 'disabled' : ''}>▲</button>
+      <button class="move" data-dir="1" aria-label="Move ${escapeHtml(cat.label)} down" ${i === cats.length - 1 ? 'disabled' : ''}>▼</button>`;
+    row.querySelector('.name').addEventListener('click', () => {
+      state.editing = open ? null : { id: cat.id, label: cat.label, icon: cat.icon, color: cat.color };
+      renderCategories();
+    });
     row.querySelectorAll('.move').forEach((b) => b.addEventListener('click', () => {
       categories.move(cat.id, Number(b.dataset.dir));
       renderCategories();
       render();
     }));
     list.appendChild(row);
+    if (open) list.appendChild(categoryEditor());
   });
+
+  const slot = $('newCategorySlot');
+  slot.innerHTML = '';
+  const adding = state.editing && state.editing.id === null;
+  if (adding) slot.appendChild(categoryEditor());
+  $('addCategoryBtn').hidden = adding;
 }
 
-function openEditor(cat) {
-  state.editing = cat
-    ? { id: cat.id, label: cat.label, icon: cat.icon, color: cat.color }
-    : { id: null, label: '', icon: ICON_CHOICES[0], color: COLOR_CHOICES[Math.floor(Math.random() * COLOR_CHOICES.length)] };
-  $('editorTitle').textContent = cat ? 'Edit category' : 'New category';
-  $('editorName').value = state.editing.label;
-  $('editorError').textContent = '';
-  $('editorDelete').hidden = !cat;
-  $('editorDelete').classList.remove('armed');
-  $('editorDelete').textContent = 'Delete category';
-  renderEditor();
-  openSheet('editorSheet');
-  if (!cat) setTimeout(() => $('editorName').focus(), 50);
-}
-
-function renderEditor() {
+function categoryEditor() {
   const e = state.editing;
-  const prev = $('editorPreview');
-  prev.textContent = e.icon;
-  prev.style.setProperty('--c', e.color);
+  const isNew = e.id === null;
+  const el = document.createElement('div');
+  el.className = 'cat-editor';
   const icons = ICON_CHOICES.includes(e.icon) ? ICON_CHOICES : [e.icon, ...ICON_CHOICES];
-  $('iconGrid').innerHTML = icons.map((ic) => `<button class="${ic === e.icon ? 'sel' : ''}">${ic}</button>`).join('');
-  $('colorGrid').innerHTML = COLOR_CHOICES.map((c) =>
-    `<button class="${c === e.color ? 'sel' : ''}" style="background:${c}" data-color="${c}" aria-label="Color ${c}"></button>`).join('');
-}
+  el.innerHTML = `
+    <div class="ed-top">
+      <span class="cat-icon" style="--c:${e.color}">${escapeHtml(e.icon)}</span>
+      <input type="text" class="select" maxlength="24" placeholder="Name (e.g. Rent)" value="${escapeHtml(e.label)}" />
+    </div>
+    <div class="icon-grid">${icons.map((ic) => `<button class="${ic === e.icon ? 'sel' : ''}">${ic}</button>`).join('')}</div>
+    <div class="color-grid">${COLOR_CHOICES.map((c) =>
+      `<button class="${c === e.color ? 'sel' : ''}" style="background:${c}" data-color="${c}" aria-label="Color ${c}"></button>`).join('')}</div>
+    <p class="error"></p>
+    <div class="ed-actions">
+      <button class="save">${isNew ? 'Add' : 'Save'}</button>
+      <button class="cancel">Cancel</button>
+      ${isNew ? '' : '<button class="delete">Delete</button>'}
+    </div>`;
 
-function saveEditor() {
-  const e = state.editing;
-  e.label = $('editorName').value;
-  try {
-    if (e.id) categories.update(e.id, e);
-    else categories.add(e);
-  } catch (err) {
-    $('editorError').textContent = err.message;
-    return;
-  }
-  render();
-  openCategories();
-}
+  const preview = el.querySelector('.ed-top .cat-icon');
+  const input = el.querySelector('input');
+  const error = el.querySelector('.error');
+  input.addEventListener('input', () => { e.label = input.value; error.textContent = ''; });
+  input.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') save(); });
+  el.querySelector('.icon-grid').addEventListener('click', (ev) => {
+    const b = ev.target.closest('button');
+    if (!b) return;
+    e.icon = b.textContent;
+    preview.textContent = e.icon;
+    el.querySelectorAll('.icon-grid button').forEach((x) => x.classList.toggle('sel', x === b));
+  });
+  el.querySelector('.color-grid').addEventListener('click', (ev) => {
+    const b = ev.target.closest('button');
+    if (!b) return;
+    e.color = b.dataset.color;
+    preview.style.setProperty('--c', e.color);
+    el.querySelectorAll('.color-grid button').forEach((x) => x.classList.toggle('sel', x === b));
+  });
 
-function deleteFromEditor() {
-  const btn = $('editorDelete');
-  // Two taps to delete (no native confirm dialogs on mobile web views).
-  if (!btn.classList.contains('armed')) {
-    const used = state.expenses.filter((x) => x.category === state.editing.id).length;
-    btn.classList.add('armed');
-    btn.textContent = used
-      ? `Tap again to delete — ${used} past expense${used > 1 ? 's keep' : ' keeps'} it in history`
-      : 'Tap again to delete';
-    return;
+  function save() {
+    try {
+      if (isNew) categories.add(e);
+      else categories.update(e.id, e);
+    } catch (err) {
+      error.textContent = err.message;
+      return;
+    }
+    state.editing = null;
+    renderCategories();
+    render();
   }
-  try {
-    categories.remove(state.editing.id);
-  } catch (err) {
-    $('editorError').textContent = err.message;
-    return;
-  }
-  render();
-  openCategories();
-  toast('Category deleted');
+  el.querySelector('.save').addEventListener('click', save);
+  el.querySelector('.cancel').addEventListener('click', () => { state.editing = null; renderCategories(); });
+
+  const del = el.querySelector('.delete');
+  if (del) del.addEventListener('click', () => {
+    // Two taps to delete (no native confirm dialogs on mobile web views).
+    if (!del.classList.contains('armed')) {
+      const used = state.expenses.filter((x) => x.category === e.id).length;
+      del.classList.add('armed');
+      del.textContent = used ? `Sure? ${used} past expense${used > 1 ? 's stay' : ' stays'} in history` : 'Tap again to delete';
+      return;
+    }
+    try {
+      categories.remove(e.id);
+    } catch (err) {
+      error.textContent = err.message;
+      return;
+    }
+    state.editing = null;
+    renderCategories();
+    render();
+    toast('Category deleted');
+  });
+
+  if (isNew) setTimeout(() => input.focus(), 30);
+  return el;
 }
 
 // ---------- Misc ----------
@@ -482,32 +531,22 @@ function init() {
   document.querySelectorAll('#periodOptions button').forEach((b) =>
     b.addEventListener('click', () => setPeriod(b.dataset.period)));
   $('mainCurrency').addEventListener('change', (e) => setCurrency(e.target.value));
-  $('openCategories').addEventListener('click', openCategories);
   $('exportBtn').addEventListener('click', exportCSV);
 
   // Categories
-  $('categoriesBack').addEventListener('click', openDrawer);
-  $('addCategoryBtn').addEventListener('click', () => openEditor(null));
+  $('addCategoryBtn').addEventListener('click', () => {
+    state.editing = { id: null, label: '', icon: ICON_CHOICES[0], color: COLOR_CHOICES[Math.floor(Math.random() * COLOR_CHOICES.length)] };
+    renderCategories();
+  });
   $('resetCategories').addEventListener('click', (e) => {
     const b = e.currentTarget;
     if (!b.dataset.armed) { b.dataset.armed = '1'; b.textContent = 'Tap again to restore defaults'; return; }
     delete b.dataset.armed;
     b.textContent = 'Restore default categories';
+    state.editing = null;
     categories.reset();
     renderCategories();
     render();
-  });
-  $('editorBack').addEventListener('click', openCategories);
-  $('editorSave').addEventListener('click', saveEditor);
-  $('editorDelete').addEventListener('click', deleteFromEditor);
-  $('editorName').addEventListener('input', () => { $('editorError').textContent = ''; });
-  $('iconGrid').addEventListener('click', (e) => {
-    const b = e.target.closest('button');
-    if (b) { state.editing.icon = b.textContent; renderEditor(); }
-  });
-  $('colorGrid').addEventListener('click', (e) => {
-    const b = e.target.closest('button');
-    if (b) { state.editing.color = b.dataset.color; renderEditor(); }
   });
 
   // Main flows
@@ -525,7 +564,6 @@ function init() {
   // Desktop keyboard
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') return closeAll();
-    if (!$('editorSheet').hidden && e.key === 'Enter') { e.preventDefault(); return saveEditor(); }
     if ($('amountSheet').hidden) return;
     if (e.key === 'Enter') { e.preventDefault(); return confirmAmount(); }
     if (e.target.matches('input, select')) return;
@@ -544,6 +582,7 @@ function init() {
     x0 = null;
   });
 
+  new ResizeObserver(layoutBoard).observe($('board'));
   reload();
 }
 
