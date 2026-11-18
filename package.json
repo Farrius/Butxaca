@@ -1,0 +1,17 @@
+{
+  "name": "butxaca",
+  "version": "0.1.0",
+  "description": "Butxaca — a Monefy-style expense tracker. Tap +, pick a category, type the amount.",
+  "main": "src/main/main.js",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "web": "node scripts/serve.js",
+    "test": "node --test test/*.test.mjs"
+  },
+  "author": "Farrius",
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "^33.0.0"
+  }
+}

@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
+  <meta name="theme-color" content="#1f8a70" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:" />
+  <title>Butxaca</title>
+  <link rel="icon" href="icon.svg" type="image/svg+xml" />
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="app">
+    <header class="topbar">
+      <div class="topbar-row">
+        <h1 class="brand">Butxaca</h1>
+        <div class="topbar-actions">
+          <button id="currencyBtn" class="chip" title="Currency shown in totals">EUR</button>
+          <button id="exportBtn" class="icon-btn" title="Export to CSV (spreadsheet)" aria-label="Export to CSV">⤓</button>
+        </div>
+      </div>
+      <nav class="periods" id="periods" role="tablist">
+        <button data-period="day">Day</button>
+        <button data-period="week">Week</button>
+        <button data-period="month">Month</button>
+        <button data-period="year">Year</button>
+        <button data-period="all">All</button>
+      </nav>
+      <div class="period-nav">
+        <button id="prevBtn" class="icon-btn" aria-label="Previous period">‹</button>
+        <span id="periodLabel"></span>
+        <button id="nextBtn" class="icon-btn" aria-label="Next period">›</button>
+      </div>
+    </header>
+
+    <main class="board" id="board">
+      <!-- category cells are injected around the donut -->
+      <button class="donut" id="donut" aria-label="Show expenses">
+        <svg viewBox="0 0 200 200" id="donutSvg" aria-hidden="true"></svg>
+        <div class="donut-center">
+          <span class="donut-caption">Expenses</span>
+          <strong id="totalLabel">€0.00</strong>
+          <span class="donut-hint">tap for details</span>
+        </div>
+      </button>
+    </main>
+
+    <footer class="bottombar">
+      <button id="addBtn" class="fab" aria-label="Add expense"><span>+</span> Expense</button>
+    </footer>
+  </div>
+
+  <!-- Bottom sheets -->
+  <div class="scrim" id="scrim" hidden></div>
+
+  <section class="sheet" id="categorySheet" hidden aria-label="Choose category">
+    <div class="sheet-handle"></div>
+    <h2>Choose a category</h2>
+    <div class="cat-grid" id="categoryGrid"></div>
+  </section>
+
+  <section class="sheet amount-sheet" id="amountSheet" hidden aria-label="Enter amount">
+    <div class="amount-head" id="amountHead">
+      <button class="icon-btn light" id="amountBack" aria-label="Back">‹</button>
+      <span class="amount-cat" id="amountCat"></span>
+      <span class="spacer"></span>
+    </div>
+    <div class="amount-display">
+      <select id="currencySelect" aria-label="Currency"></select>
+      <output id="amountValue">0</output>
+    </div>
+    <div class="amount-meta">
+      <input type="date" id="dateInput" aria-label="Date" />
+      <input type="text" id="noteInput" placeholder="Note (optional)" maxlength="120" />
+    </div>
+    <div class="keypad" id="keypad">
+      <button>7</button><button>8</button><button>9</button>
+      <button>4</button><button>5</button><button>6</button>
+      <button>1</button><button>2</button><button>3</button>
+      <button data-key=".">,</button><button>0</button><button data-key="back" aria-label="Delete">⌫</button>
+    </div>
+    <button class="confirm" id="confirmBtn" disabled>Add expense</button>
+  </section>
+
+  <section class="sheet list-sheet" id="listSheet" hidden aria-label="Expenses by category">
+    <div class="sheet-handle"></div>
+    <div class="list-head">
+      <h2 id="listTitle">Expenses</h2>
+      <button class="icon-btn" id="listClose" aria-label="Close">✕</button>
+    </div>
+    <div id="listBody"></div>
+  </section>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>
