@@ -2,7 +2,20 @@
 
 A Monefy-style expense tracker: **tap +, pick a category, type the amount.** Tap the donut to see where the money went.
 
-## Run it
+## Use it on your phone
+
+**https://farrius.github.io/Butxaca/** — open it, then:
+- **iPhone (Safari):** Share button → *Add to Home Screen*
+- **Android (Chrome):** ☰ menu in the app → *Install app on this phone* (or browser ⋮ → *Install app*)
+
+It then opens full-screen like a normal app and works offline. Share it by sending the link (☰ → *Share Butxaca with someone*).
+Each person's expenses stay on their own phone until Google Sheets sync lands — use ☰ → *Export* as a backup.
+
+The site is published automatically by `.github/workflows/pages.yml` on every push to `main`
+(one-time setup: repo **Settings → Pages → Source: GitHub Actions**). When you change any file in
+`src/renderer`, bump `VERSION` in `src/renderer/sw.js` so installed apps pick up the update.
+
+## Run it locally
 
 ```bash
 npm install
@@ -12,7 +25,7 @@ npm test         # data-layer unit tests
 npm run build:single  # one self-contained HTML file in dist/ (easy to host / open on a phone)
 ```
 
-## What it does (v0.4)
+## What it does (v0.5)
 
 - **+ Expense** → category grid → amount keypad, with currency, date and optional note.
 - **Categories sit on a circle** around the spending donut; **tap an icon** to add straight into it (Monefy shortcut). The circle scales to the screen and the number of categories.

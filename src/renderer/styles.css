@@ -405,3 +405,4 @@ body.is-dragging { user-select: none; -webkit-user-select: none; cursor: grabbin
 .ed-actions .cancel { color: var(--muted); padding: 8px 10px; }
 .error { color: var(--danger); font-size: 12px; margin: 0 0 6px; }
 .error:empty { display: none; }
+.install-hint { margin: 0 0 8px 42px; line-height: 1.45; }

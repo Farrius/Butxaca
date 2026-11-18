@@ -595,6 +595,62 @@ async function exportCSV() {
   toast(`Exported ${rows.length} expenses`);
 }
 
+// ---------- Install / share (PWA) ----------
+let installPrompt = null;
+const isStandalone = () =>
+  window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+const isIOS = () => /iphone|ipad|ipod/i.test(navigator.userAgent) ||
+  (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+const isWeb = () => /^https?:$/.test(location.protocol) && !window.butxaca?.isElectron && window.self === window.top;
+
+function setupPWA() {
+  if (!isWeb()) return; // Electron / file:// / embedded preview: nothing to install
+
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('sw.js').catch(() => {});
+  }
+  // Ask the browser not to evict our data under storage pressure.
+  navigator.storage?.persist?.().catch(() => {});
+
+  window.addEventListener('beforeinstallprompt', (e) => {
+    e.preventDefault(); // show our own button instead (Android / desktop Chrome)
+    installPrompt = e;
+    renderInstall();
+  });
+  window.addEventListener('appinstalled', () => { installPrompt = null; renderInstall(); toast('Butxaca installed'); });
+
+  $('installBtn').addEventListener('click', async () => {
+    if (installPrompt) {
+      installPrompt.prompt();
+      await installPrompt.userChoice.catch(() => {});
+      installPrompt = null;
+      renderInstall();
+    } else {
+      $('installHint').hidden = !$('installHint').hidden;
+    }
+  });
+
+  $('shareBtn').addEventListener('click', async () => {
+    const url = location.href.split('#')[0];
+    try {
+      if (navigator.share) await navigator.share({ title: 'Butxaca', text: 'Track your spending with Butxaca', url });
+      else { await navigator.clipboard.writeText(url); toast('Link copied'); }
+    } catch { /* share sheet dismissed */ }
+  });
+  renderInstall();
+}
+
+function renderInstall() {
+  if (!isWeb()) return;
+  const installed = isStandalone();
+  $('shareBtn').hidden = false;
+  $('installBtn').hidden = installed || (!installPrompt && !isIOS());
+  $('installHint').textContent = isIOS()
+    ? 'In Safari, tap the Share button (square with an arrow), then “Add to Home Screen”.'
+    : 'Open your browser menu (⋮) and choose “Install app” or “Add to Home screen”.';
+  if (installed || installPrompt) $('installHint').hidden = true;
+}
+
 async function reload() {
   state.expenses = await store.list();
   render();
@@ -703,6 +759,7 @@ function init() {
   });
 
   new ResizeObserver(layoutBoard).observe($('board'));
+  setupPWA();
   reload();
 }
 

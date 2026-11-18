@@ -8,6 +8,11 @@
   <title>Butxaca</title>
   <link rel="icon" href="icon.svg" type="image/svg+xml" />
   <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-title" content="Butxaca" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
@@ -113,9 +118,12 @@
       <button class="text-btn muted" id="resetCategories">Restore default categories</button>
     </div>
     <div class="drawer-section">
+      <button class="drawer-item" id="installBtn" hidden><span>📲</span> Install app on this phone<b></b></button>
+      <p class="hint install-hint" id="installHint" hidden></p>
+      <button class="drawer-item" id="shareBtn" hidden><span>🔗</span> Share Butxaca with someone<b></b></button>
       <button class="drawer-item" id="exportBtn"><span>📤</span> Export to spreadsheet (CSV)<b></b></button>
     </div>
-    <p class="drawer-foot">v0.4 · data stays on this device</p>
+    <p class="drawer-foot">v0.5 · your data stays on this device</p>
   </aside>
 
   <div class="toast" id="toast" role="status" aria-live="polite"></div>

@@ -19,6 +19,7 @@ const icon = 'data:image/svg+xml,' + encodeURIComponent(read('icon.svg').trim())
 let html = read('index.html')
   .replace(/^\s*<meta http-equiv="Content-Security-Policy".*\n/m, '')
   .replace(/^\s*<link rel="manifest".*\n/m, '')
+  .replace(/^\s*<link rel="apple-touch-icon".*\n/m, '')
   .replace('href="icon.svg"', () => `href="${icon}"`)
   .replace('<link rel="stylesheet" href="styles.css" />', () => `<style>\n${read('styles.css')}</style>`)
   .replace('<script type="module" src="app.js"></script>', () => `<script type="module">\n${js}</script>`);
