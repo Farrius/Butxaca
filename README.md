@@ -9,6 +9,7 @@ npm install
 npm start        # desktop app (Electron), phone-sized window
 npm run web      # same app in any browser → http://localhost:5173 (open it on your phone on the same Wi-Fi)
 npm test         # data-layer unit tests
+npm run build:single  # one self-contained HTML file in dist/ (easy to host / open on a phone)
 ```
 
 ## What's in the MVP (v0.1)

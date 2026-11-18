@@ -32,9 +32,22 @@ export function makeExpense({ date, category, amount, currency, note = '' }) {
   };
 }
 
+/** localStorage if it works here, otherwise an in-memory fallback (sandboxed frames, private mode). */
+function usableStorage() {
+  try {
+    const ls = globalThis.localStorage;
+    ls.setItem('butxaca.probe', '1');
+    ls.removeItem('butxaca.probe');
+    return ls;
+  } catch {
+    const m = new Map();
+    return { getItem: (k) => (m.has(k) ? m.get(k) : null), setItem: (k, v) => m.set(k, String(v)), removeItem: (k) => m.delete(k) };
+  }
+}
+
 /** Local backend: browser localStorage (persisted per-profile by Electron). */
 export class LocalStore {
-  constructor(storage = globalThis.localStorage) {
+  constructor(storage = usableStorage()) {
     this.storage = storage;
   }
 

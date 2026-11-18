@@ -318,7 +318,18 @@ function setViewCurrency(code) {
 
 async function exportCSV() {
   const rows = (await store.list()).slice().sort((a, b) => a.date.localeCompare(b.date));
-  const blob = new Blob([toCSV(rows)], { type: 'text/csv;charset=utf-8' });
+  const csv = toCSV(rows);
+  // Inside an embedded/sandboxed page downloads are blocked: copy instead.
+  if (window.self !== window.top) {
+    try {
+      await navigator.clipboard.writeText(csv);
+      toast(`Copied ${rows.length} expenses as CSV — paste into Google Sheets`);
+    } catch {
+      toast('Export not available here — use the desktop app');
+    }
+    return;
+  }
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
   a.download = `butxaca-expenses-${toISODate(new Date())}.csv`;
