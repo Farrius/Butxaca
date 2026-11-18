@@ -354,7 +354,7 @@ function renderList() {
 
 // ---------- Categories (inline in the menu) ----------
 // state.editing: null, or { id (null = new), label, icon }
-const COLLAPSED_COUNT = 5;
+const COLLAPSED_COUNT = 3;
 
 function renderCategories() {
   const list = $('categoriesList');
@@ -664,14 +664,42 @@ function init() {
     else if (e.key === 'Backspace') pressKey('back');
   });
 
-  // Swipe left/right on the board to change period, like Monefy.
-  let x0 = null;
-  $('board').addEventListener('touchstart', (e) => { x0 = e.touches[0].clientX; }, { passive: true });
-  $('board').addEventListener('touchend', (e) => {
-    if (x0 == null || state.period === 'all') return;
-    const dx = e.changedTouches[0].clientX - x0;
-    if (Math.abs(dx) > 60) { state.anchor = shift(state.period, state.anchor, dx < 0 ? 1 : -1); render(); }
-    x0 = null;
+  // Touch gestures:
+  //  - swipe right from the left edge → open the menu
+  //  - swipe left on the open menu → close it
+  //  - swipe left/right on the board → previous/next period (like Monefy)
+  const EDGE = 28;
+  let t0 = null; // { x, y, fromEdge, onDrawer }
+  document.addEventListener('touchstart', (e) => {
+    if (e.touches.length !== 1 || document.body.classList.contains('is-dragging')) { t0 = null; return; }
+    const { clientX: x, clientY: y } = e.touches[0];
+    const appLeft = document.querySelector('.app').getBoundingClientRect().left;
+    t0 = {
+      x, y,
+      fromEdge: x - appLeft < EDGE && $('drawer').hidden && $('scrim').hidden,
+      onDrawer: !$('drawer').hidden,
+      onBoard: !!e.target.closest('#board'),
+    };
+  }, { passive: true });
+  document.addEventListener('touchmove', (e) => {
+    if (!t0 || document.body.classList.contains('is-dragging')) return;
+    const dx = e.touches[0].clientX - t0.x;
+    const dy = e.touches[0].clientY - t0.y;
+    if (Math.abs(dx) < 40 || Math.abs(dy) > Math.abs(dx)) return;
+    if (t0.fromEdge && dx > 0) { t0 = null; openDrawer(); }
+    else if (t0.onDrawer && dx < 0) { t0 = null; closeAll(); }
+  }, { passive: true });
+  document.addEventListener('touchend', (e) => {
+    if (!t0) return;
+    const start = t0;
+    t0 = null;
+    if (!start.onBoard || start.fromEdge || state.period === 'all') return;
+    const dx = e.changedTouches[0].clientX - start.x;
+    const dy = e.changedTouches[0].clientY - start.y;
+    if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy)) {
+      state.anchor = shift(state.period, state.anchor, dx < 0 ? 1 : -1);
+      render();
+    }
   });
 
   new ResizeObserver(layoutBoard).observe($('board'));

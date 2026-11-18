@@ -17,11 +17,11 @@ npm run build:single  # one self-contained HTML file in dist/ (easy to host / op
 - **+ Expense** → category grid → amount keypad, with currency, date and optional note.
 - **Categories sit on a circle** around the spending donut; **tap an icon** to add straight into it (Monefy shortcut). The circle scales to the screen and the number of categories.
 - **Donut** of spending per category for the current period; **tap it** for the breakdown (sorted by total, % bars, expand to see/delete single expenses).
-- **‹ ›** in the header (or swipe) moves to the previous/next period. **Undo** after adding or deleting.
+- **‹ ›** in the header (or swipe sideways on the circle) moves to the previous/next period. **Swipe right from the left edge** opens the ☰ menu; swipe left closes it. **Undo** after adding or deleting.
 - **☰ menu** (everything inline, no sub-screens)
   - **Period**: Day / Week / Month / Year / All
   - **Main currency**: what totals and the chart use, and the default for new expenses. Each currency is totalled separately (no FX conversion yet).
-  - **Categories**: first 5 shown, *Show all* for the rest. Drag ⠿ to change a category's place on the circle (touch or mouse). ✎ edits name + emoji (pick one or type any emoji), 🗑 deletes with Undo (past expenses keep it in history). Colors are assigned automatically.
+  - **Categories**: first 3 shown, *Show all* for the rest. Drag ⠿ to change a category's place on the circle (touch or mouse). ✎ edits name + emoji (pick one or type any emoji), 🗑 deletes with Undo (past expenses keep it in history). Colors are assigned automatically.
   - **Export to spreadsheet (CSV)**: opens directly in Google Sheets / Excel.
 - Keyboard on desktop: digits, `,`/`.`, Backspace, Enter to save, Esc to close.
 - Data is stored locally (Electron's localStorage).
