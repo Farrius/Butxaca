@@ -12,16 +12,18 @@ npm test         # data-layer unit tests
 npm run build:single  # one self-contained HTML file in dist/ (easy to host / open on a phone)
 ```
 
-## What's in the MVP (v0.1)
+## What it does (v0.2)
 
-- **+ Expense** → category grid → amount keypad with currency (EUR, USD, GBP, CHF, JPY), date and optional note.
+- **+ Expense** → category grid → amount keypad, with currency, date and optional note.
 - **Tap a category icon** on the main screen to add straight into it (Monefy shortcut).
-- **Donut** of spending per category for the selected period; **tap it** for the breakdown: categories sorted by total with % bars, expand to see/delete individual expenses.
-- **Periods**: Day / Week / Month / Year / All, with ‹ › arrows (or swipe on touch).
-- **Undo** after adding or deleting.
-- **Currency chip** (top right) switches which currency the totals show. No FX conversion — each currency is totalled separately.
-- **⤓ Export** to CSV — opens directly in Google Sheets / Excel.
-- Keyboard on desktop: type digits, `,`/`.`, Backspace, Enter to save, Esc to close.
+- **Donut** of spending per category for the current period; **tap it** for the breakdown (sorted by total, % bars, expand to see/delete single expenses).
+- **‹ ›** in the header (or swipe) moves to the previous/next period. **Undo** after adding or deleting.
+- **☰ menu**
+  - **Period**: Day / Week / Month / Year / All
+  - **Main currency**: what totals and the chart use, and the default for new expenses. Each currency is totalled separately (no FX conversion yet).
+  - **Categories**: add (name, icon, color), edit, delete, reorder (order = position around the donut). Deleting hides a category but keeps its past expenses readable; the board grows to fit more categories.
+  - **Export to spreadsheet (CSV)**: opens directly in Google Sheets / Excel.
+- Keyboard on desktop: digits, `,`/`.`, Backspace, Enter to save, Esc to close.
 - Data is stored locally (Electron's localStorage).
 
 ## Data model = spreadsheet columns
@@ -32,7 +34,7 @@ Every expense is one flat row, so Google Sheets can become the database without 
 |----|------|----------|--------|----------|------|-----------|
 | uuid | `YYYY-MM-DD` | category id (e.g. `eating_out`) | number | ISO code | text | ISO timestamp |
 
-Category **ids** are stable (labels/icons can change), so other apps reading the sheet can rely on them.
+Category **ids** are stable (labels/icons can change, deleted ones are archived, never reused), so other apps reading the sheet can rely on them. Categories themselves (`id, label, icon, color, archived`) will live in a second tab of the same spreadsheet.
 
 ## Project layout
 
@@ -52,4 +54,4 @@ test/              node:test unit tests
 2. **Import from spreadsheet** (CSV first, then directly from the Sheet).
 3. **Recurring charges** — the monthly things drained from the account (rent, subscriptions…) auto-added each month.
 4. **Real mobile build** — the renderer is plain web code, so wrap it with Capacitor (iOS/Android) or install as a PWA.
-5. Custom categories, editing an expense, income/balance (if wanted).
+5. Editing an expense, currency conversion, income/balance (if wanted).

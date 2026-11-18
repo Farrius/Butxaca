@@ -40,3 +40,40 @@ test('period ranges', () => {
   // month shift from the 31st must not skip months
   assert.deepEqual(rangeFor('month', shift('month', new Date(2026, 0, 31), 1)), { start: '2026-02-01', end: '2026-02-28' });
 });
+
+import { CategoryStore, DEFAULT_CATEGORIES } from '../src/renderer/data/categories.js';
+
+test('categories: add, edit, archive, reorder, reset', () => {
+  const storage = memoryStorage();
+  const cats = new CategoryStore(storage);
+  assert.equal(cats.active().length, DEFAULT_CATEGORIES.length);
+
+  const rent = cats.add({ label: 'Rent', icon: '🏠', color: '#ef5350' });
+  assert.equal(rent.id, 'rent');
+  assert.equal(cats.add({ label: 'Rent' }).id, 'rent_2'); // ids never collide
+  assert.throws(() => cats.add({ label: '  ' }));
+
+  cats.update('rent', { label: 'Lloguer' });
+  assert.equal(cats.get('rent').label, 'Lloguer');
+
+  cats.remove('rent');
+  assert.ok(!cats.active().some((c) => c.id === 'rent'));
+  assert.equal(cats.get('rent').label, 'Lloguer'); // history still resolves
+
+  const [first, second] = cats.active();
+  cats.move(second.id, -1);
+  assert.equal(cats.active()[0].id, second.id);
+  assert.equal(cats.active()[1].id, first.id);
+
+  // persisted
+  assert.equal(new CategoryStore(storage).get('rent').label, 'Lloguer');
+
+  cats.reset();
+  assert.equal(cats.active().length, DEFAULT_CATEGORIES.length);
+});
+
+test('categories: cannot delete the last one', () => {
+  const cats = new CategoryStore(memoryStorage());
+  for (const c of cats.active().slice(1)) cats.remove(c.id);
+  assert.throws(() => cats.remove(cats.active()[0].id));
+});

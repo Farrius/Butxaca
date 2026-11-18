@@ -14,23 +14,13 @@
   <div class="app">
     <header class="topbar">
       <div class="topbar-row">
-        <h1 class="brand">Butxaca</h1>
-        <div class="topbar-actions">
-          <button id="currencyBtn" class="chip" title="Currency shown in totals">EUR</button>
-          <button id="exportBtn" class="icon-btn" title="Export to CSV (spreadsheet)" aria-label="Export to CSV">⤓</button>
+        <button id="menuBtn" class="icon-btn" aria-label="Menu">☰</button>
+        <div class="period-nav">
+          <button id="prevBtn" class="icon-btn" aria-label="Previous period">‹</button>
+          <button id="periodLabel" class="period-label" title="Change period"></button>
+          <button id="nextBtn" class="icon-btn" aria-label="Next period">›</button>
         </div>
-      </div>
-      <nav class="periods" id="periods" role="tablist">
-        <button data-period="day">Day</button>
-        <button data-period="week">Week</button>
-        <button data-period="month">Month</button>
-        <button data-period="year">Year</button>
-        <button data-period="all">All</button>
-      </nav>
-      <div class="period-nav">
-        <button id="prevBtn" class="icon-btn" aria-label="Previous period">‹</button>
-        <span id="periodLabel"></span>
-        <button id="nextBtn" class="icon-btn" aria-label="Next period">›</button>
+        <span class="icon-btn" aria-hidden="true"></span>
       </div>
     </header>
 
@@ -90,6 +80,64 @@
       <button class="icon-btn" id="listClose" aria-label="Close">✕</button>
     </div>
     <div id="listBody"></div>
+  </section>
+
+  <!-- Hamburger menu -->
+  <aside class="drawer" id="drawer" hidden aria-label="Menu">
+    <div class="drawer-head">
+      <span class="drawer-logo">👛</span>
+      <div><strong>Butxaca</strong><small id="drawerSummary"></small></div>
+    </div>
+    <div class="drawer-section">
+      <h3>Period</h3>
+      <div class="seg" id="periodOptions">
+        <button data-period="day">Day</button>
+        <button data-period="week">Week</button>
+        <button data-period="month">Month</button>
+        <button data-period="year">Year</button>
+        <button data-period="all">All</button>
+      </div>
+    </div>
+    <div class="drawer-section">
+      <h3>Main currency</h3>
+      <select id="mainCurrency" class="select"></select>
+      <p class="hint">Totals and the chart use this currency. New expenses start in it.</p>
+    </div>
+    <div class="drawer-section">
+      <button class="drawer-item" id="openCategories"><span>🗂️</span> Categories <small id="catCount"></small><b>›</b></button>
+      <button class="drawer-item" id="exportBtn"><span>📤</span> Export to spreadsheet (CSV)<b></b></button>
+    </div>
+    <p class="drawer-foot">v0.2 · data stays on this device</p>
+  </aside>
+
+  <section class="sheet full" id="categoriesSheet" hidden aria-label="Categories">
+    <div class="list-head">
+      <button class="icon-btn" id="categoriesBack" aria-label="Back">‹</button>
+      <h2>Categories</h2>
+      <button class="text-btn" id="addCategoryBtn">+ Add</button>
+    </div>
+    <p class="hint">Tap to edit. Arrows set the order on the main screen.</p>
+    <div id="categoriesList"></div>
+    <button class="text-btn muted" id="resetCategories">Restore default categories</button>
+  </section>
+
+  <section class="sheet full" id="editorSheet" hidden aria-label="Edit category">
+    <div class="list-head">
+      <button class="icon-btn" id="editorBack" aria-label="Back">‹</button>
+      <h2 id="editorTitle">New category</h2>
+      <span class="icon-btn"></span>
+    </div>
+    <div class="editor-preview">
+      <span class="cat-icon big" id="editorPreview">📦</span>
+      <input type="text" id="editorName" class="select" placeholder="Name (e.g. Rent)" maxlength="24" />
+    </div>
+    <h3 class="editor-label">Icon</h3>
+    <div class="icon-grid" id="iconGrid"></div>
+    <h3 class="editor-label">Color</h3>
+    <div class="color-grid" id="colorGrid"></div>
+    <p class="error" id="editorError"></p>
+    <button class="confirm" id="editorSave">Save</button>
+    <button class="danger-btn" id="editorDelete">Delete category</button>
   </section>
 
   <div class="toast" id="toast" role="status" aria-live="polite"></div>

@@ -33,7 +33,7 @@ export function makeExpense({ date, category, amount, currency, note = '' }) {
 }
 
 /** localStorage if it works here, otherwise an in-memory fallback (sandboxed frames, private mode). */
-function usableStorage() {
+export function usableStorage() {
   try {
     const ls = globalThis.localStorage;
     ls.setItem('butxaca.probe', '1');
@@ -86,9 +86,9 @@ export class LocalStore {
 
   getSettings() {
     try {
-      return { defaultCurrency: 'EUR', period: 'month', ...JSON.parse(this.storage.getItem(SETTINGS_KEY) || '{}') };
+      return { currency: 'EUR', period: 'month', ...JSON.parse(this.storage.getItem(SETTINGS_KEY) || '{}') };
     } catch {
-      return { defaultCurrency: 'EUR', period: 'month' };
+      return { currency: 'EUR', period: 'month' };
     }
   }
 

@@ -1,28 +1,30 @@
-import { CATEGORIES, CURRENCIES, getCategory, formatMoney } from './data/categories.js';
+import { CategoryStore, CURRENCIES, ICON_CHOICES, COLOR_CHOICES, formatMoney } from './data/categories.js';
 import { LocalStore, toCSV } from './data/store.js';
 import { rangeFor, shift, inRange, labelFor, toISODate, parseISODate } from './data/period.js';
 
 const store = new LocalStore();
+const categories = new CategoryStore(store.storage);
 const $ = (id) => document.getElementById(id);
 
 const settings = store.getSettings();
 const state = {
   period: settings.period || 'month',
   anchor: new Date(),
-  viewCurrency: settings.viewCurrency || settings.defaultCurrency || 'EUR',
+  currency: settings.currency || settings.viewCurrency || settings.defaultCurrency || 'EUR',
   expenses: [],
-  // amount entry
-  entry: { category: null, value: '0', currency: settings.defaultCurrency || 'EUR' },
+  entry: { category: null, value: '0', currency: null },
   expanded: new Set(),
+  editing: null, // category being edited ({ id?, label, icon, color })
 };
 
-// Where each of the 14 categories sits on the 4x5 board around the donut.
-const BOARD_SLOTS = [
-  [1, 1], [1, 2], [1, 3], [1, 4], // top row
-  [2, 4], [3, 4], [4, 4],         // right column
-  [5, 4], [5, 3], [5, 2], [5, 1], // bottom row (right → left)
-  [4, 1], [3, 1], [2, 1],         // left column (bottom → top)
-];
+// Locale decimal separator ("," in Catalan/Spanish, "." in English).
+const DECIMAL = (1.5).toLocaleString().charAt(1);
+const money = (n) => formatMoney(n, state.currency);
+const round2 = (n) => Math.round(n * 100) / 100;
+
+function escapeHtml(s) {
+  return String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
 
 // ---------- Data helpers ----------
 function periodExpenses() {
@@ -33,123 +35,163 @@ function periodExpenses() {
 function totalsByCategory(rows) {
   const map = new Map();
   for (const r of rows) {
-    if (r.currency !== state.viewCurrency) continue;
+    if (r.currency !== state.currency) continue;
     map.set(r.category, (map.get(r.category) || 0) + r.amount);
   }
   return map;
 }
 
-// Locale decimal separator ("," in Catalan/Spanish, "." in English).
-const DECIMAL = (1.5).toLocaleString().charAt(1);
-const money = (n) => formatMoney(n, state.viewCurrency);
-const round2 = (n) => Math.round(n * 100) / 100;
+/**
+ * Board layout: categories go clockwise around the donut on a 4-column grid
+ * (top row, right column, bottom row, left column). The grid grows taller
+ * when there are more than 12 categories.
+ */
+function ringLayout(n) {
+  const side = Math.max(2, Math.ceil(Math.max(0, n - 8) / 2)); // rows beside the donut
+  const rows = side + 2;
+  const slots = [];
+  for (let c = 1; c <= 4; c++) slots.push([1, c]);
+  for (let r = 2; r <= rows - 1; r++) slots.push([r, 4]);
+  for (let c = 4; c >= 1; c--) slots.push([rows, c]);
+  for (let r = rows - 1; r >= 2; r--) slots.push([r, 1]);
+  return { rows, side, slots: slots.slice(0, n) };
+}
 
-// ---------- Rendering ----------
+// ---------- Main screen ----------
 function renderHeader() {
-  document.querySelectorAll('#periods button').forEach((b) => {
-    b.classList.toggle('active', b.dataset.period === state.period);
-  });
   $('periodLabel').textContent = labelFor(state.period, state.anchor);
   const isAll = state.period === 'all';
   $('prevBtn').disabled = isAll;
   $('nextBtn').disabled = isAll;
-  $('currencyBtn').textContent = state.viewCurrency;
 }
 
-function catButton(cat, amount) {
+function catButton(cat, amount, showAmount = true) {
   const btn = document.createElement('button');
   btn.className = 'cat-cell' + (amount ? '' : ' empty');
   btn.style.setProperty('--c', cat.color);
   btn.dataset.category = cat.id;
   btn.innerHTML = `
-    <span class="cat-icon">${cat.icon}</span>
-    <span class="cat-name">${cat.label}</span>
-    <span class="cat-amount">${amount ? money(amount) : ''}</span>`;
+    <span class="cat-icon">${escapeHtml(cat.icon)}</span>
+    <span class="cat-name">${escapeHtml(cat.label)}</span>
+    ${showAmount ? `<span class="cat-amount">${amount ? money(amount) : ''}</span>` : ''}`;
   return btn;
 }
 
 function renderBoard(totals) {
   const board = $('board');
-  board.querySelectorAll('.cat-cell').forEach((n) => n.remove());
-  CATEGORIES.slice(0, BOARD_SLOTS.length).forEach((cat, i) => {
+  board.querySelectorAll('.cat-cell, .empty-board').forEach((n) => n.remove());
+  const cats = categories.active();
+  // Also show archived categories that still have spending in this period.
+  for (const id of totals.keys()) {
+    if (!cats.some((c) => c.id === id)) cats.push(categories.get(id));
+  }
+  const { rows, side, slots } = ringLayout(cats.length);
+  board.style.gridTemplateRows = `repeat(${rows}, 1fr)`;
+  $('donut').style.gridRow = `2 / span ${side}`;
+  cats.forEach((cat, i) => {
     const btn = catButton(cat, totals.get(cat.id) || 0);
-    const [row, col] = BOARD_SLOTS[i];
+    const [row, col] = slots[i];
     btn.style.gridRow = row;
     btn.style.gridColumn = col;
-    btn.addEventListener('click', () => openAmount(cat.id));
+    btn.addEventListener('click', () => (cat.archived ? openList() : openAmount(cat.id)));
     board.appendChild(btn);
   });
 }
 
 function renderDonut(totals) {
-  const svg = $('donutSvg');
   const total = [...totals.values()].reduce((a, b) => a + b, 0);
   const r = 80;
   const C = 2 * Math.PI * r;
-  const parts = [];
-  parts.push(`<circle cx="100" cy="100" r="${r}" fill="none" stroke="#e3e6ea" stroke-width="26"/>`);
+  const parts = [`<circle cx="100" cy="100" r="${r}" fill="none" stroke="#e3e6ea" stroke-width="26"/>`];
   if (total > 0) {
     let offset = 0;
     const gap = totals.size > 1 ? 1.5 : 0;
-    const sorted = [...totals.entries()].sort((a, b) => b[1] - a[1]);
-    for (const [catId, amt] of sorted) {
+    for (const [catId, amt] of [...totals.entries()].sort((a, b) => b[1] - a[1])) {
       const len = (amt / total) * C;
       const seg = Math.max(len - gap, 0.5);
       parts.push(
-        `<circle cx="100" cy="100" r="${r}" fill="none" stroke="${getCategory(catId).color}" stroke-width="26"
-          stroke-dasharray="${seg} ${C - seg}" stroke-dashoffset="${-offset}"
-          transform="rotate(-90 100 100)"/>`
+        `<circle cx="100" cy="100" r="${r}" fill="none" stroke="${categories.get(catId).color}" stroke-width="26"
+          stroke-dasharray="${seg} ${C - seg}" stroke-dashoffset="${-offset}" transform="rotate(-90 100 100)"/>`
       );
       offset += len;
     }
   }
   parts.push(`<circle cx="100" cy="100" r="66" fill="#fff"/>`);
-  svg.innerHTML = parts.join('');
+  $('donutSvg').innerHTML = parts.join('');
   $('totalLabel').textContent = money(round2(total));
 }
 
 function render() {
-  const rows = periodExpenses();
-  const totals = totalsByCategory(rows);
+  const totals = totalsByCategory(periodExpenses());
   renderHeader();
   renderBoard(totals);
   renderDonut(totals);
   if (!$('listSheet').hidden) renderList();
 }
 
-// ---------- Sheets ----------
+// ---------- Overlays ----------
+function closeAll() {
+  $('scrim').hidden = true;
+  $('drawer').hidden = true;
+  document.querySelectorAll('.sheet').forEach((s) => (s.hidden = true));
+}
 function openSheet(id) {
-  closeSheets();
+  closeAll();
+  $('toast').classList.remove('show'); // a stale "undo" shouldn't cover the next screen
   $('scrim').hidden = false;
   $(id).hidden = false;
 }
-function closeSheets() {
-  $('scrim').hidden = true;
-  document.querySelectorAll('.sheet').forEach((s) => (s.hidden = true));
+
+// ---------- Hamburger menu ----------
+function openDrawer() {
+  closeAll();
+  $('toast').classList.remove('show');
+  renderDrawer();
+  $('scrim').hidden = false;
+  $('drawer').hidden = false;
 }
 
-// Category picker (the "+" flow)
+function renderDrawer() {
+  document.querySelectorAll('#periodOptions button').forEach((b) =>
+    b.classList.toggle('active', b.dataset.period === state.period));
+  $('mainCurrency').value = state.currency;
+  $('catCount').textContent = categories.active().length;
+  $('drawerSummary').textContent = `${state.period === 'all' ? 'All time' : state.period} · ${state.currency}`;
+}
+
+function setPeriod(p) {
+  state.period = p;
+  state.anchor = new Date();
+  store.saveSettings({ period: p });
+  renderDrawer();
+  render();
+}
+
+function setCurrency(code) {
+  state.currency = code;
+  store.saveSettings({ currency: code });
+  renderDrawer();
+  render();
+}
+
+// ---------- Add expense: category picker → amount ----------
 function openCategoryPicker() {
   const grid = $('categoryGrid');
   grid.innerHTML = '';
-  for (const cat of CATEGORIES) {
-    const btn = catButton(cat, 0);
-    btn.classList.remove('empty');
-    btn.querySelector('.cat-amount').remove();
+  for (const cat of categories.active()) {
+    const btn = catButton(cat, 1, false);
     btn.addEventListener('click', () => openAmount(cat.id));
     grid.appendChild(btn);
   }
   openSheet('categorySheet');
 }
 
-// Amount entry
 function openAmount(categoryId) {
-  const cat = getCategory(categoryId);
-  state.entry = { category: categoryId, value: '0', currency: state.entry.currency };
+  const cat = categories.get(categoryId);
+  state.entry = { category: categoryId, value: '0', currency: state.currency };
   $('amountHead').style.setProperty('--c', cat.color);
-  $('amountCat').innerHTML = `<span>${cat.icon}</span><span>${cat.label}</span>`;
+  $('amountCat').innerHTML = `<span>${escapeHtml(cat.icon)}</span><span>${escapeHtml(cat.label)}</span>`;
   $('currencySelect').value = state.entry.currency;
-  // Default the date to the period being viewed if it's not "today's" period.
   const today = toISODate(new Date());
   const range = rangeFor(state.period, state.anchor);
   $('dateInput').value = inRange(today, range) ? today : range.end || today;
@@ -161,30 +203,22 @@ function openAmount(categoryId) {
 function renderAmount() {
   const v = state.entry.value;
   const [int, dec] = v.split('.');
-  const pretty = Number(int).toLocaleString() + (dec !== undefined ? DECIMAL + dec : '');
-  $('amountValue').textContent = pretty;
-  $('confirmBtn').disabled = !(Number(v) > 0);
-  const cat = getCategory(state.entry.category);
-  $('confirmBtn').textContent = Number(v) > 0
-    ? `Add ${formatMoney(Number(v), state.entry.currency)} · ${cat.label}`
+  $('amountValue').textContent = Number(int).toLocaleString() + (dec !== undefined ? DECIMAL + dec : '');
+  const ok = Number(v) > 0;
+  $('confirmBtn').disabled = !ok;
+  $('confirmBtn').textContent = ok
+    ? `Add ${formatMoney(Number(v), state.entry.currency)} · ${categories.get(state.entry.category).label}`
     : 'Add expense';
 }
 
 function pressKey(key) {
   let v = state.entry.value;
-  if (key === 'back') {
-    v = v.length > 1 ? v.slice(0, -1) : '0';
-  } else if (key === '.') {
-    if (!v.includes('.')) v += '.';
-  } else if (/^\d$/.test(key)) {
+  if (key === 'back') v = v.length > 1 ? v.slice(0, -1) : '0';
+  else if (key === '.') { if (!v.includes('.')) v += '.'; }
+  else if (/^\d$/.test(key)) {
     const [int, dec] = v.split('.');
-    if (dec !== undefined) {
-      if (dec.length >= 2) return;
-      v += key;
-    } else {
-      if (int.length >= 9) return;
-      v = v === '0' ? key : v + key;
-    }
+    if (dec !== undefined) { if (dec.length >= 2) return; v += key; }
+    else { if (int.length >= 9) return; v = v === '0' ? key : v + key; }
   } else return;
   state.entry.value = v;
   renderAmount();
@@ -200,28 +234,30 @@ async function confirmAmount() {
     currency: state.entry.currency,
     note: $('noteInput').value,
   });
-  store.saveSettings({ defaultCurrency: row.currency });
-  // If you log in another currency, switch the view so you see it land.
-  if (row.currency !== state.viewCurrency) setViewCurrency(row.currency);
   await reload();
-  closeSheets();
-  toast(`${formatMoney(row.amount, row.currency)} added to ${getCategory(row.category).label}`, async () => {
+  closeAll();
+  const other = row.currency !== state.currency ? ` (shown when main currency is ${row.currency})` : '';
+  toast(`${formatMoney(row.amount, row.currency)} added to ${categories.get(row.category).label}${other}`, async () => {
     await store.remove(row.id);
     await reload();
   });
 }
 
-// Expense list (tap the donut)
+// ---------- Expense list (tap the donut) ----------
+function openList() {
+  renderList();
+  openSheet('listSheet');
+}
+
 function renderList() {
   const rows = periodExpenses();
-  const inCur = rows.filter((r) => r.currency === state.viewCurrency);
+  const inCur = rows.filter((r) => r.currency === state.currency);
   const total = inCur.reduce((a, r) => a + r.amount, 0);
   $('listTitle').textContent = `${labelFor(state.period, state.anchor)} · ${money(round2(total))}`;
   const body = $('listBody');
   body.innerHTML = '';
-
   if (!inCur.length) {
-    body.innerHTML = `<div class="empty-state">No expenses in ${state.viewCurrency} for this period.<br/>Tap <b>+ Expense</b> to add one.</div>`;
+    body.innerHTML = `<div class="empty-state">No expenses in ${state.currency} for this period.<br/>Tap <b>+ Expense</b> to add one.</div>`;
   }
 
   const groups = new Map();
@@ -234,15 +270,15 @@ function renderList() {
     .sort((a, b) => b[2] - a[2]);
 
   for (const [catId, items, sum] of sorted) {
-    const cat = getCategory(catId);
+    const cat = categories.get(catId);
     const pct = total ? (sum / total) * 100 : 0;
     const g = document.createElement('div');
     g.className = 'group';
     g.style.setProperty('--c', cat.color);
     g.innerHTML = `
       <button class="group-row">
-        <span class="cat-icon">${cat.icon}</span>
-        <span class="group-label"><span>${cat.label}</span><span class="bar"><i style="width:${pct.toFixed(1)}%"></i></span></span>
+        <span class="cat-icon">${escapeHtml(cat.icon)}</span>
+        <span class="group-label"><span>${escapeHtml(cat.label)}${cat.archived ? ' <small>(deleted)</small>' : ''}</span><span class="bar"><i style="width:${pct.toFixed(1)}%"></i></span></span>
         <span class="group-total">${money(round2(sum))}<small>${pct.toFixed(0)}% · ${items.length}</small></span>
       </button>`;
     g.querySelector('.group-row').addEventListener('click', () => {
@@ -260,7 +296,7 @@ function renderList() {
           it.className = 'item';
           const d = parseISODate(r.date).toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
           it.innerHTML = `
-            <div class="item-meta"><div>${escapeHtml(r.note) || cat.label}</div><small>${d}</small></div>
+            <div class="item-meta"><div>${escapeHtml(r.note) || escapeHtml(cat.label)}</div><small>${d}</small></div>
             <span class="item-amt">${formatMoney(r.amount, r.currency)}</span>
             <button class="del" aria-label="Delete">✕</button>`;
           it.querySelector('.del').addEventListener('click', async () => {
@@ -278,7 +314,7 @@ function renderList() {
     body.appendChild(g);
   }
 
-  const others = rows.filter((r) => r.currency !== state.viewCurrency);
+  const others = rows.filter((r) => r.currency !== state.currency);
   if (others.length) {
     const byCur = {};
     for (const r of others) byCur[r.currency] = (byCur[r.currency] || 0) + r.amount;
@@ -286,13 +322,101 @@ function renderList() {
     p.className = 'other-currencies';
     p.textContent = 'Also in this period: ' +
       Object.entries(byCur).map(([c, a]) => formatMoney(round2(a), c)).join(', ') +
-      ' — tap the currency chip at the top to switch.';
+      ' — change the main currency in the ☰ menu to see them.';
     body.appendChild(p);
   }
 }
 
-function escapeHtml(s) {
-  return String(s || '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+// ---------- Categories manager ----------
+function openCategories() {
+  renderCategories();
+  openSheet('categoriesSheet');
+}
+
+function renderCategories() {
+  const list = $('categoriesList');
+  list.innerHTML = '';
+  const cats = categories.active();
+  cats.forEach((cat, i) => {
+    const row = document.createElement('div');
+    row.className = 'cat-row';
+    row.style.setProperty('--c', cat.color);
+    row.innerHTML = `
+      <span class="cat-icon">${escapeHtml(cat.icon)}</span>
+      <button class="name">${escapeHtml(cat.label)}</button>
+      <button class="move" data-dir="-1" aria-label="Move up" ${i === 0 ? 'disabled' : ''}>▲</button>
+      <button class="move" data-dir="1" aria-label="Move down" ${i === cats.length - 1 ? 'disabled' : ''}>▼</button>`;
+    row.querySelector('.cat-icon').addEventListener('click', () => openEditor(cat));
+    row.querySelector('.name').addEventListener('click', () => openEditor(cat));
+    row.querySelectorAll('.move').forEach((b) => b.addEventListener('click', () => {
+      categories.move(cat.id, Number(b.dataset.dir));
+      renderCategories();
+      render();
+    }));
+    list.appendChild(row);
+  });
+}
+
+function openEditor(cat) {
+  state.editing = cat
+    ? { id: cat.id, label: cat.label, icon: cat.icon, color: cat.color }
+    : { id: null, label: '', icon: ICON_CHOICES[0], color: COLOR_CHOICES[Math.floor(Math.random() * COLOR_CHOICES.length)] };
+  $('editorTitle').textContent = cat ? 'Edit category' : 'New category';
+  $('editorName').value = state.editing.label;
+  $('editorError').textContent = '';
+  $('editorDelete').hidden = !cat;
+  $('editorDelete').classList.remove('armed');
+  $('editorDelete').textContent = 'Delete category';
+  renderEditor();
+  openSheet('editorSheet');
+  if (!cat) setTimeout(() => $('editorName').focus(), 50);
+}
+
+function renderEditor() {
+  const e = state.editing;
+  const prev = $('editorPreview');
+  prev.textContent = e.icon;
+  prev.style.setProperty('--c', e.color);
+  const icons = ICON_CHOICES.includes(e.icon) ? ICON_CHOICES : [e.icon, ...ICON_CHOICES];
+  $('iconGrid').innerHTML = icons.map((ic) => `<button class="${ic === e.icon ? 'sel' : ''}">${ic}</button>`).join('');
+  $('colorGrid').innerHTML = COLOR_CHOICES.map((c) =>
+    `<button class="${c === e.color ? 'sel' : ''}" style="background:${c}" data-color="${c}" aria-label="Color ${c}"></button>`).join('');
+}
+
+function saveEditor() {
+  const e = state.editing;
+  e.label = $('editorName').value;
+  try {
+    if (e.id) categories.update(e.id, e);
+    else categories.add(e);
+  } catch (err) {
+    $('editorError').textContent = err.message;
+    return;
+  }
+  render();
+  openCategories();
+}
+
+function deleteFromEditor() {
+  const btn = $('editorDelete');
+  // Two taps to delete (no native confirm dialogs on mobile web views).
+  if (!btn.classList.contains('armed')) {
+    const used = state.expenses.filter((x) => x.category === state.editing.id).length;
+    btn.classList.add('armed');
+    btn.textContent = used
+      ? `Tap again to delete — ${used} past expense${used > 1 ? 's keep' : ' keeps'} it in history`
+      : 'Tap again to delete';
+    return;
+  }
+  try {
+    categories.remove(state.editing.id);
+  } catch (err) {
+    $('editorError').textContent = err.message;
+    return;
+  }
+  render();
+  openCategories();
+  toast('Category deleted');
 }
 
 // ---------- Misc ----------
@@ -309,11 +433,6 @@ function toast(msg, undo) {
   t.classList.add('show');
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => t.classList.remove('show'), 4000);
-}
-
-function setViewCurrency(code) {
-  state.viewCurrency = code;
-  store.saveSettings({ viewCurrency: code });
 }
 
 async function exportCSV() {
@@ -347,47 +466,69 @@ async function reload() {
 
 // ---------- Wiring ----------
 function init() {
-  const sel = $('currencySelect');
   document.querySelector('#keypad [data-key="."]').textContent = DECIMAL;
-  sel.innerHTML = CURRENCIES.map((c) => `<option value="${c.code}">${c.code}</option>`).join('');
-  sel.addEventListener('change', () => { state.entry.currency = sel.value; renderAmount(); });
+  const opts = CURRENCIES.map((c) => `<option value="${c.code}">${c.code} — ${c.name}</option>`).join('');
+  $('mainCurrency').innerHTML = opts;
+  $('currencySelect').innerHTML = CURRENCIES.map((c) => `<option value="${c.code}">${c.code}</option>`).join('');
+  $('currencySelect').addEventListener('change', (e) => { state.entry.currency = e.target.value; renderAmount(); });
 
-  document.querySelectorAll('#periods button').forEach((b) =>
-    b.addEventListener('click', () => {
-      state.period = b.dataset.period;
-      state.anchor = new Date();
-      store.saveSettings({ period: state.period });
-      render();
-    })
-  );
+  // Header
+  $('menuBtn').addEventListener('click', openDrawer);
+  $('periodLabel').addEventListener('click', openDrawer);
   $('prevBtn').addEventListener('click', () => { state.anchor = shift(state.period, state.anchor, -1); render(); });
   $('nextBtn').addEventListener('click', () => { state.anchor = shift(state.period, state.anchor, 1); render(); });
-  $('currencyBtn').addEventListener('click', () => {
-    const codes = CURRENCIES.map((c) => c.code);
-    setViewCurrency(codes[(codes.indexOf(state.viewCurrency) + 1) % codes.length]);
-    render();
-  });
+
+  // Drawer
+  document.querySelectorAll('#periodOptions button').forEach((b) =>
+    b.addEventListener('click', () => setPeriod(b.dataset.period)));
+  $('mainCurrency').addEventListener('change', (e) => setCurrency(e.target.value));
+  $('openCategories').addEventListener('click', openCategories);
   $('exportBtn').addEventListener('click', exportCSV);
 
+  // Categories
+  $('categoriesBack').addEventListener('click', openDrawer);
+  $('addCategoryBtn').addEventListener('click', () => openEditor(null));
+  $('resetCategories').addEventListener('click', (e) => {
+    const b = e.currentTarget;
+    if (!b.dataset.armed) { b.dataset.armed = '1'; b.textContent = 'Tap again to restore defaults'; return; }
+    delete b.dataset.armed;
+    b.textContent = 'Restore default categories';
+    categories.reset();
+    renderCategories();
+    render();
+  });
+  $('editorBack').addEventListener('click', openCategories);
+  $('editorSave').addEventListener('click', saveEditor);
+  $('editorDelete').addEventListener('click', deleteFromEditor);
+  $('editorName').addEventListener('input', () => { $('editorError').textContent = ''; });
+  $('iconGrid').addEventListener('click', (e) => {
+    const b = e.target.closest('button');
+    if (b) { state.editing.icon = b.textContent; renderEditor(); }
+  });
+  $('colorGrid').addEventListener('click', (e) => {
+    const b = e.target.closest('button');
+    if (b) { state.editing.color = b.dataset.color; renderEditor(); }
+  });
+
+  // Main flows
   $('addBtn').addEventListener('click', openCategoryPicker);
-  $('donut').addEventListener('click', () => { renderList(); openSheet('listSheet'); });
-  $('listClose').addEventListener('click', closeSheets);
-  $('scrim').addEventListener('click', closeSheets);
+  $('donut').addEventListener('click', openList);
+  $('listClose').addEventListener('click', closeAll);
+  $('scrim').addEventListener('click', closeAll);
   $('amountBack').addEventListener('click', openCategoryPicker);
   $('confirmBtn').addEventListener('click', confirmAmount);
-
   $('keypad').addEventListener('click', (e) => {
     const b = e.target.closest('button');
     if (b) pressKey(b.dataset.key || b.textContent.trim());
   });
 
-  // Desktop keyboard support while the amount sheet is open.
+  // Desktop keyboard
   document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') return closeSheets();
+    if (e.key === 'Escape') return closeAll();
+    if (!$('editorSheet').hidden && e.key === 'Enter') { e.preventDefault(); return saveEditor(); }
     if ($('amountSheet').hidden) return;
-    const typing = e.target.matches('input, select');
     if (e.key === 'Enter') { e.preventDefault(); return confirmAmount(); }
-    if (typing) return;
+    if (e.target.matches('input, select')) return;
     if (/^\d$/.test(e.key)) pressKey(e.key);
     else if (e.key === '.' || e.key === ',') pressKey('.');
     else if (e.key === 'Backspace') pressKey('back');
