@@ -215,7 +215,7 @@ function openAmount(categoryId) {
   const cat = categories.get(categoryId);
   state.entry = { category: categoryId, value: '0', currency: state.currency };
   $('amountHead').style.setProperty('--c', cat.color);
-  $('amountCat').innerHTML = `<span>${escapeHtml(cat.icon)}</span><span>${escapeHtml(cat.label)}</span>`;
+  $('amountCat').innerHTML = `<span class="cat-icon" style="--c:${cat.color}">${escapeHtml(cat.icon)}</span><span>${escapeHtml(cat.label)}</span>`;
   $('currencySelect').value = state.entry.currency;
   const today = toISODate(new Date());
   const range = rangeFor(state.period, state.anchor);

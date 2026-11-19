@@ -184,16 +184,29 @@ button:disabled { cursor: default; }
 .cat-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px 4px; padding-bottom: 6px; }
 
 /* Amount entry */
-.amount-sheet { padding: 0 0 calc(12px + env(safe-area-inset-bottom)); max-height: 100%; }
+/* Opens as a card in the middle of the screen, not a bottom sheet. */
+.amount-sheet {
+  top: 50%;
+  bottom: auto;
+  transform: translate(-50%, -50%);
+  width: min(380px, calc(100% - 24px));
+  max-height: calc(100% - 24px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+  border-radius: 22px;
+  padding: 0 0 14px;
+  overflow: hidden auto;
+  animation: pop 0.18s ease;
+}
+@keyframes pop { from { transform: translate(-50%, -46%) scale(0.96); opacity: 0; } }
+/* Light tint of the category colour + dark text: readable for every colour. */
 .amount-head {
   display: flex; align-items: center; gap: 8px;
   padding: 10px 10px;
-  background: var(--c, var(--brand));
-  color: #fff;
-  border-radius: var(--radius) var(--radius) 0 0;
+  background: color-mix(in srgb, var(--c, var(--brand)) 22%, #fff);
+  color: var(--ink);
 }
-.amount-head .icon-btn.light { color: #fff; font-size: 26px; }
-.amount-cat { font-weight: 700; font-size: 17px; display: flex; align-items: center; gap: 8px; }
+.amount-head .icon-btn.light { color: var(--ink); font-size: 26px; }
+.amount-cat { font-weight: 700; font-size: 17px; display: flex; align-items: center; gap: 10px; }
+.amount-cat .cat-icon { --sz: 34px; box-shadow: none; }
 .spacer { flex: 1; }
 .amount-display {
   display: flex; align-items: center; gap: 10px;

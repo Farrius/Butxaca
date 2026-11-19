@@ -1,7 +1,7 @@
 // Offline support: the whole app is a handful of static files, so cache them
 // on install and serve them cache-first. Bump VERSION on every release so
 // phones pick up the new files (the old cache is deleted on activate).
-const VERSION = 'butxaca-v0.5.0';
+const VERSION = 'butxaca-v0.5.1';
 const FILES = [
   './',
   './index.html',
